@@ -63,10 +63,10 @@ if len(sys.argv) != 2:
 input_file = sys.argv[1]
 # 从命令行参数中获取 L_Limit 和 R_Limit
 #这片大地（1/1)
-L_Limit = int(input("输入起始块 (不写从这片大地的起源开始读取): ") or 0)
+L_Limit = int(input("输入起始块 (空白则从头开始读取): ") or 0)
 #就算是海洋沸腾、大气消失，就算我们的卫星接连坠入重力的漩涡，就算我们的太阳凶恶的膨胀，无情地吃掉它的孩子直至万籁俱寂……我们也一样能再见面,你说是吧我的屎山代码和Bug😅😅😅
 #佬普你到底干了什么😭😭😭
-R_Limit = int(input("输入结束块 (留白则读到黑暗和星点光芒装饰的文明尽头): ") or float('inf'))+1
+R_Limit = int(input("输入结束块 (空白则到文件尾部结束读取): ") or float('inf'))+1
 
 
 # 连接到 SQLite 数据库
