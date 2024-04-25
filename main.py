@@ -1,5 +1,5 @@
 import sys
-import os
+import time
 import sqlite3
 import csv
 
@@ -11,18 +11,14 @@ def calculate_average_speed(cursor, vehicle_dict, lane_type, keep_decimals):
     for vehicle_name in vehicle_dict:
         # 查询数据库，获取对应车辆在指定车道的速度数据
         if lane_type == 2:
-            cursor.execute("SELECT Speed FROM VehicleData WHERE Vehicle = ?", (vehicle_name,))
+            cursor.execute("SELECT AVG(Speed) FROM VehicleData WHERE Vehicle = ?", (vehicle_name,))
         else:
-            cursor.execute("SELECT Speed FROM VehicleData WHERE Vehicle = ? AND IsLeft = ?", (vehicle_name, lane_type))
-        speeds = cursor.fetchall()
+            cursor.execute("SELECT AVG(Speed) FROM VehicleData WHERE Vehicle = ? AND IsLeft = ?", (vehicle_name, lane_type))
+        average_speed = cursor.fetchone()[0]
         
-        # 计算速度数据的平均值
-        if speeds:
-            average_speed = sum(speed[0] for speed in speeds) / len(speeds)
-            # 保留小数到指定的位数
+        # 保留小数到指定的位数
+        if average_speed is not None:
             average_speed = round(average_speed, keep_decimals)
-        else:
-            average_speed = None
         
         # 将平均值存储到字典中对应的数组的第一个元素
         if lane_type == 1:
@@ -51,10 +47,6 @@ def write_to_csv(vehicle_dict, output_file):
             csv_writer.writerow([vehicle_name, speeds[0], speeds[1], speeds[2]])
 
 
-# 删除现有的数据库文件
-if os.path.exists(r'Database\vehicle_speeds.db'):
-    os.remove(r'Database\vehicle_speeds.db')
-
 # 确保命令行参数正确
 if len(sys.argv) != 2:
     print("如下使用范例运行: python script.py input_file.csv")
@@ -63,15 +55,19 @@ if len(sys.argv) != 2:
 input_file = sys.argv[1]
 # 从命令行参数中获取 L_Limit 和 R_Limit
 #这片大地（1/1)
-L_Limit = int(input("输入起始块 (空白则从头开始读取): ") or 0)
+L_Limit = 30
 #就算是海洋沸腾、大气消失，就算我们的卫星接连坠入重力的漩涡，就算我们的太阳凶恶的膨胀，无情地吃掉它的孩子直至万籁俱寂……我们也一样能再见面,你说是吧我的屎山代码和Bug😅😅😅
 #佬普你到底干了什么😭😭😭
-R_Limit = int(input("输入结束块 (空白则到文件尾部结束读取): ") or float('inf'))+1
+R_Limit = 30+31
 
 
-# 连接到 SQLite 数据库
-conn = sqlite3.connect(r'Database\vehicle_speeds.db')
+# 连接到 内存SQLite 数据库
+conn = sqlite3.connect(':memory:')
 cursor = conn.cursor()
+
+
+# 设置缓存大小为10000页,爆了自己改
+cursor.execute("PRAGMA cache_size = 100000")
 
 # 创建 VehicleSpeeds 表
 cursor.execute('''CREATE TABLE VehicleData (
@@ -138,6 +134,9 @@ vehicle_dict = {}
 for vehicle in vehicles:
     vehicle_name = vehicle[0]
     vehicle_dict[vehicle_name] = [None, None, None]  # [Left speeds, Right speeds, Total speeds]
+
+# 打印字典
+#print("Vehicle dictionary:", vehicle_dict)
 
 # 计算左车道平均速度
 calculate_average_speed(cursor, vehicle_dict, lane_type=1, keep_decimals=keep_decimals)
