@@ -3,6 +3,7 @@ import sys
 import os
 import sqlite3
 import csv
+import time
 
 # 至多保留的小数位，不补齐0，自己写去
 keep_decimals = 3
@@ -11,47 +12,37 @@ output_file = 'output.csv'
 
 # 老天，这曾经简直是屎诗,现在它是史诗了
 # 算了，还是精彩的屎山
-#我是史学家，这旧事史
+# 我是史学家，这旧事史
 
-def calculate_average_speed(cursor, vehicle_name, lane_type, keep_decimals, tick):
-    # 计算对应的 BlockID 范围
-    start_block_id = 30 + tick * 30
-    end_block_id = start_block_id + 29
+
+def calculate_all_speeds(cursor, vehicle_name, start_tick, end_tick):
+    start_block_id = 30 + start_tick * 30
+    end_block_id = 30 + end_tick * 30 + 29
+
+    query = """
+    SELECT IsLeft, AVG(Speed) 
+    FROM VehicleData 
+    WHERE Vehicle = ? AND BlockID BETWEEN ? AND ?
+    GROUP BY IsLeft
+    """
+    cursor.execute(query, (vehicle_name, start_block_id, end_block_id))
+    results = cursor.fetchall()
 
     # 初始化速度数据
     speeds = [None, None, None]  # [左侧车道, 右侧车道, 全部车道]
+    index_map = {1: 0, 0: 1}  # 数据库中1代表左车道，映射到索引0；0代表右车道，映射到索引1
 
-    # 映射lane_type到速度数据索引
-    index_map = {0: 1, 1: 0}  # 数据库中0代表右车道，所以映射到索引1；1代表左车道，映射到索引0
+    # 处理查询结果
+    valid_speeds = []
+    for is_left, avg_speed in results:
+        if avg_speed is not None:
+            rounded_speed = round(avg_speed, keep_decimals)
+            speeds[index_map[is_left]] = rounded_speed
+            valid_speeds.append(rounded_speed)
 
-    if lane_type == 2:
-        # 分别查询左侧和右侧车道的平均速度
-        for direction in [0, 1]:  # 0为右侧车道, 1为左侧车道
-            query = "SELECT AVG(Speed) FROM VehicleData WHERE Vehicle = ? AND IsLeft = ? AND BlockID BETWEEN ? AND ?"
-            cursor.execute(query, (vehicle_name, direction,
-                        start_block_id, end_block_id))
-            avg_speed = cursor.fetchone()[0]
-            if avg_speed is not None:
-                avg_speed = round(avg_speed, keep_decimals)
-            speeds[index_map[direction]] = avg_speed
-
-        # 计算总体平均速度，只考虑存在的数据
-        valid_speeds = []
-        for speed in speeds[:2]:
-            if speed is not None:
-                valid_speeds.append(speed)
-
-        if valid_speeds:
-            speeds[2] = sum(valid_speeds) / len(valid_speeds)
-    else:
-        # 计算指定车道的平均速度
-        query = "SELECT AVG(Speed) FROM VehicleData WHERE Vehicle = ? AND IsLeft = ? AND BlockID BETWEEN ? AND ?"
-        cursor.execute(query, (vehicle_name, lane_type,
-                    start_block_id, end_block_id))
-        average_speed = cursor.fetchone()[0]
-        if average_speed is not None:
-            average_speed = round(average_speed, keep_decimals)
-            speeds[index_map[lane_type]] = average_speed
+    # 计算总体平均速度
+    if valid_speeds:
+        speeds[2] = sum(valid_speeds) / len(valid_speeds)
 
     return speeds
 
@@ -99,6 +90,7 @@ L_Limit = int(input("输入起始块 (空白则从头开始读取): ") or 0)
 # 佬普你到底干了什么😭😭😭
 R_Limit = int(input("输入结束块 (空白则到文件尾部结束读取): ") or sys.maxsize)
 
+start_time = time.time()
 
 # 连接到 SQLite 数据库
 conn = sqlite3.connect(r'vehicle_speeds.db')
@@ -158,6 +150,14 @@ with open(input_file, 'r', newline='') as csvfile:
 
 conn.commit()
 
+end0_time = time.time()
+
+# 计算用时
+elapsed_time0 = end0_time - start_time
+
+# 打印时间差
+print(f"读出并且写入数据库用时: {elapsed_time0} 秒")
+
 # 查询表中的行数
 cursor.execute("SELECT COUNT(*) FROM VehicleData")
 row_count = cursor.fetchone()[0]
@@ -166,7 +166,7 @@ row_count = cursor.fetchone()[0]
 if row_count == 0:
     print("Database is empty")
 else:
-    print(row_count)
+    print(f"数据库内总条目数：{row_count}")
 
 
 # 查询数据库以获取最大的 BlockID
@@ -196,35 +196,50 @@ for tick_index, vehicles in vehicle_groups.items():
     for vehicle in set(vehicles):  # 使用set去重
         tick_data[tick_index][vehicle] = [None, None, None]
 
+end1_time = time.time()
+
+# 计算用时
+elapsed_time1 = end1_time - end0_time
+
+# 打印时间差
+print(f"初始化列表用时: {elapsed_time1} 秒")
+
+# 遍历每个Tick
 # 遍历每个Tick
 for i in range(num_ticks):
-    start_block_id = 30 + i * 30
-    end_block_id = start_block_id + 29
-
     # 获取当前Tick的字典
     tick_dict = tick_data[i]
 
     # 遍历当前Tick字典中的每辆车
     for vehicle_name in tick_dict.keys():
-        # 计算左侧车道的平均速度
-        left_speeds = calculate_average_speed(
-            cursor, vehicle_name, 1, keep_decimals, i)
-        # 计算右侧车道的平均速度
-        right_speeds = calculate_average_speed(
-            cursor, vehicle_name, 0, keep_decimals, i)
-        # 计算全部车道的平均速度
-        total_speeds = calculate_average_speed(
-            cursor, vehicle_name, 2, keep_decimals, i)
+        # 计算所有车道的平均速度
+        speeds = calculate_all_speeds(cursor, vehicle_name, i, i)
 
         # 更新tick_dict中对应车辆的速度数据
-        tick_dict[vehicle_name] = [left_speeds[0],
-                                right_speeds[1], total_speeds[2]]
+        tick_dict[vehicle_name] = speeds
+
+
+end2_time = time.time()
+
+# 计算用时
+elapsed_time2 = end2_time - end1_time
+
+# 打印时间差
+print(f"完成遍历和计算用时: {elapsed_time2} 秒")
 
 # 写入csv
 
 write_to_csv(tick_data, max_block_id, output_file)
 
 # 提交事务并关闭数据库连接
+
+end_time = time.time()
+
+# 计算用时
+elapsed_time = end_time - start_time
+
+# 打印时间差
+print(f"全程用时: {elapsed_time} 秒")
 
 conn.close()
 # 删除现有的数据库文件
